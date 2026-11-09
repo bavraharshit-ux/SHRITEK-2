@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Open Loops</title>
+<!--
+==========================================================================
+OPEN LOOPS - a personal loop-closing tracker
+==========================================================================
+README
+
+How to open
+  - Double-click index.html (or open it via File > Open in any modern
+    browser). No server, build step, or internet connection is needed.
+  - Data is saved in this browser's localStorage, keyed to this file's
+    location. A different browser, a private window, or a moved file
+    starts with empty data, so export regularly.
+  - On a phone: copy the file to the device and open it in the browser,
+    or host it anywhere static. Data stays on that device.
+
+How to export / import
+  - Settings tab > Backup > "Export JSON" downloads open-loops-DATE.json.
+  - "Import JSON" reads such a file. "Replace" wipes current items first;
+    "Merge" keeps both, and for the same item id keeps whichever copy was
+    updated most recently.
+  - A banner nags if the last export is older than 14 days.
+
+How to use the weekly review
+  - Weekly review tab > "Start review". Every open and waiting item is
+    shown one at a time, overdue first. For each, pick one decision:
+      Done  - close it (optional note)
+      Push  - new next date, reason required (logged to history)
+      Drop  - close as dropped, reason required
+      Edit next action - rewrite the next step (and date if needed)
+    "Skip" moves on without a decision, but the review cannot be completed
+    while any item is still overdue. The end screen lists what blocks
+    completion and shows totals: closed, pushed, dropped, remaining.
+  - A banner appears on your review day (Sunday by default, change in
+    Settings) if the last completed review is more than 6 days old.
+
+Keyboard: press "n" anywhere to jump to the quick-add bar.
+==========================================================================
+-->
+<style>
+/* ---------- 1. Theme (light/dark follows system) ---------- */
+:root{--bg:#f6f6f4;--panel:#fff;--text:#1c1c1e;--muted:#6a6a70;--line:#dddde0;--accent:#2457c5;--on-accent:#fff;
+  --red:#c62828;--red-bg:#fdeceb;--amber:#995700;--amber-bg:#fff3dd;--green:#2e7d32;--chip:#eef0f4;--shadow:0 1px 2px rgba(0,0,0,.06)}
+@media (prefers-color-scheme:dark){:root{--bg:#131315;--panel:#1d1d20;--text:#e7e7ea;--muted:#9d9da5;--line:#34343b;--accent:#82a6ff;
+  --on-accent:#0c1222;--red:#ff7b74;--red-bg:#3a1c1d;--amber:#ffbf5e;--amber-bg:#372a14;--green:#86c98a;--chip:#2a2b31;--shadow:none}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:12px}
+h1{font-size:18px;margin:0 0 8px}
+h2{font-size:16px;margin:18px 0 8px}
+h3{font-size:14px;margin:14px 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+small,.muted{color:var(--muted)}
+input,select,textarea,button{font:inherit;color:inherit}
+input,select,textarea{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 8px;width:100%;min-width:0}
+input[type=checkbox],input[type=radio]{width:auto}
+textarea{resize:vertical}
+button{background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+button.danger{background:var(--red);color:#fff;border-color:var(--red)}
+button:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* ---------- 2. Layout: header, quick add, tabs ---------- */
+header{background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.qa-row{display:grid;grid-template-columns:2fr 1fr 2fr 1.2fr auto;gap:6px}
+#qa details{margin-top:6px}
+#qa summary{cursor:pointer;color:var(--muted);font-size:13px}
+.more-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.more-grid .full{grid-column:1/-1}
+.hint{font-size:12.5px;color:var(--muted);margin:4px 0 0}
+.err{color:var(--red);font-size:13px;margin:4px 0 0;min-height:0}
+.err:empty{display:none}
+nav{display:flex;gap:4px;overflow-x:auto;margin-top:10px;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{background:none;border:none;border-bottom:2px solid transparent;border-radius:0;padding:6px 8px;color:var(--muted)}
+nav button.on{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
+nav .n{font-size:12px;background:var(--chip);border-radius:9px;padding:0 6px;margin-left:3px}
+nav .n.bad{background:var(--red);color:#fff}
+/* ---------- 3. Banners, cards, rows ---------- */
+.banner{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-radius:8px;margin:8px 0;border:1px solid var(--line);background:var(--panel)}
+.banner span{flex:1;min-width:180px}
+.banner.bad{background:var(--red-bg);border-color:var(--red)}
+.banner.warn{background:var(--amber-bg);border-color:var(--amber)}
+.card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;box-shadow:var(--shadow)}
+.card.overdue{border-left-color:var(--red);background:var(--red-bg)}
+.card.today{border-left-color:var(--amber)}
+.card .top{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.card .title{font-weight:600}
+.card .na{margin:4px 0}
+.meta{font-size:13px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 12px}
+.meta .late{color:var(--red);font-weight:600}
+.tag{font-size:11px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:4px;background:var(--chip)}
+.flag{font-size:11.5px;padding:1px 6px;border-radius:4px;border:1px solid currentColor}
+.flag.red{color:var(--red)}
+.flag.amber{color:var(--amber)}
+.flag.grey{color:var(--muted)}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.btns button{padding:4px 9px;font-size:13.5px}
+details.hist{margin-top:6px;font-size:13px}
+details.hist summary{cursor:pointer;color:var(--muted)}
+details.hist ol{margin:4px 0;padding-left:18px}
+.rows{list-style:none;padding:0;margin:0}
+.row{display:flex;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0}
+.row label{display:flex;gap:10px;align-items:flex-start;flex:1;cursor:pointer}
+.row input[type=checkbox]{margin-top:4px;width:18px;height:18px}
+.row.overdue{background:var(--red-bg);border-color:var(--red)}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.counts{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.counts span{background:var(--chip);border-radius:6px;padding:2px 8px;font-size:13px}
+.empty{color:var(--muted);padding:20px 0;text-align:center}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin:8px 0}
+.panel label{display:block;margin:8px 0 3px;font-size:13.5px}
+.inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.inline label{display:inline-flex;gap:4px;align-items:center;margin:0}
+.inline input:not([type=radio]),.inline select{width:auto}
+.progress{height:6px;background:var(--chip);border-radius:3px;overflow:hidden;margin:6px 0}
+.progress div{height:100%;background:var(--accent)}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin:8px 0}
+.summary div{background:var(--chip);border-radius:8px;padding:8px;text-align:center}
+.summary b{display:block;font-size:22px}
+/* ---------- 4. Modal and toast ---------- */
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:5vh 10px;z-index:20;overflow-y:auto}
+#modal[hidden]{display:none}
+.dlg{background:var(--panel);border-radius:10px;padding:14px;width:100%;max-width:520px;border:1px solid var(--line)}
+.dlg h2{margin-top:0}
+.dlg label{display:block;margin:10px 0 3px;font-size:13.5px}
+.dlg .btns{justify-content:flex-end;margin-top:14px}
+.dlg .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 8px}
+#toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;z-index:30;max-width:92vw}
+#toast[hidden]{display:none}
+/* ---------- 5. Mobile ---------- */
+@media (max-width:640px){
+  .wrap{padding:10px}
+  .qa-row{grid-template-columns:1fr 1fr}
+  .qa-row #qa-title,.qa-row [name=nextAction]{grid-column:1/-1}
+  .qa-row button{grid-column:1/-1;padding:9px}
+  .more-grid,.dlg .grid2{grid-template-columns:1fr}
+  header{position:static}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Open Loops</h1>
+    <form id="qa" novalidate autocomplete="off">
+      <div class="qa-row">
+        <input id="qa-title" name="title" placeholder="New loop (press n)" aria-label="Title">
+        <select name="tag" aria-label="Tag"></select>
+        <input name="nextAction" placeholder="Next action" aria-label="Next action">
+        <input name="nextDate" type="date" aria-label="Next date">
+        <button class="primary" type="submit">Add</button>
+      </div>
+      <p class="hint" id="qa-hint"></p>
+      <details id="qa-more"><summary>More fields</summary>
+        <div class="more-grid">
+          <input name="counterpart" placeholder="Counterpart (vendor, approver, person)">
+          <select name="status" aria-label="Status"><option value="open">open</option><option value="waiting">waiting</option></select>
+          <input name="waitingOn" placeholder="Waiting on (who has the ball)">
+          <input name="milestone" placeholder="Milestone (PROJECT)">
+          <label class="hint">Deadline (PROJECT)<input name="deadline" type="date"></label>
+          <textarea class="full" name="notes" rows="2" placeholder="Notes"></textarea>
+        </div>
+      </details>
+      <p class="err" id="qa-err"></p>
+    </form>
+    <nav id="nav"></nav>
+  </div>
+</header>
+<main class="wrap">
+  <div id="banners"></div>
+  <section id="view"></section>
+</main>
+<div id="modal" hidden></div>
+<div id="toast" hidden></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   1. CONSTANTS
+   ===================================================================== */
+const STORE_KEY = 'openloops.v1';
+const TAGS = ['VENDOR', 'APPROVAL', 'ADMIN', 'PROJECT', 'PERSON', 'OTHER'];
+const STATUSES = ['open', 'waiting', 'done', 'dropped'];
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const TAG_HINTS = {
+  VENDOR: 'VENDOR: make the ask specific and put a date in it, e.g. "Ask Ravi for revised rate by Thu". Default next date: +2 working days.',
+  APPROVAL: 'APPROVAL: note the approval stage in notes. "Waiting on" is required when status is waiting.',
+  ADMIN: 'ADMIN: handled together in the Admin batch view.',
+  PROJECT: 'PROJECT: needs a milestone (next visible deliverable) and a deadline before it can be saved as open.',
+  PERSON: 'PERSON: needs a counterpart. Flagged "Reply owed" if untouched for more than a day.',
+  OTHER: 'OTHER: no special rules.'
+};
+const VIEWS = [['today', 'Today'], ['open', 'All open'], ['waiting', 'Waiting'], ['admin', 'Admin batch'],
+  ['review', 'Weekly review'], ['done', 'Done log'], ['data', 'Settings']];
+const DAY_MS = 86400000;
+
+/* =====================================================================
+   2. SMALL HELPERS (DOM, escaping, dates)
+   Dates are stored as local "YYYY-MM-DD" strings so they compare as text.
+   Timestamps (createdAt etc.) are milliseconds since epoch.
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const pad = n => String(n).padStart(2, '0');
+const dateStr = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const todayStr = () => dateStr(new Date());
+const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+function parseDate(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function addDays(s, n) { const d = parseDate(s); d.setDate(d.getDate() + n); return dateStr(d); }
+function addWorkingDays(s, n) {
+  const d = parseDate(s);
+  while (n > 0) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6) n--; }
+  return dateStr(d);
+}
+/** Whole days from a to b (b - a). */
+const daysBetween = (a, b) => Math.round((parseDate(b) - parseDate(a)) / DAY_MS);
+const daysSince = ts => Math.floor((Date.now() - ts) / DAY_MS);
+function fmtDate(s) { return isDate(s) ? parseDate(s).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: s.slice(0, 4) === todayStr().slice(0, 4) ? undefined : 'numeric' }) : ''; }
+function fmtTs(ts) { return ts ? new Date(ts).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''; }
+function relDay(s) {
+  const n = daysBetween(todayStr(), s);
+  if (n === 0) return 'today';
+  if (n === 1) return 'tomorrow';
+  if (n === -1) return '1 day overdue';
+  return n < 0 ? (-n) + ' days overdue' : 'in ' + n + ' days';
+}
+const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+
+/* =====================================================================
+   3. STORAGE
+   ===================================================================== */
+let storageError = '';
+function defaultDb() {
+  return {
+    version: 1, items: [], review: null,
+    settings: { notifyOn: false, notifyTime: '09:00', lastNotified: null, reviewDay: 0, lastReviewAt: null,
+      lastReviewSummary: null, lastExportAt: null, reviewBannerDismissed: null, exportNagDismissed: null }
+  };
+}
+/** Coerce any item-like object into a valid item (used on load and import). */
+function normalize(x) {
+  const s = v => (typeof v === 'string' ? v : v == null ? '' : String(v));
+  const now = Date.now();
+  const it = {
+    id: s(x.id) || uid(), title: s(x.title), tag: TAGS.includes(x.tag) ? x.tag : 'OTHER',
+    counterpart: s(x.counterpart), nextAction: s(x.nextAction), nextDate: isDate(x.nextDate) ? x.nextDate : todayStr(),
+    status: STATUSES.includes(x.status) ? x.status : 'open', waitingOn: s(x.waitingOn), milestone: s(x.milestone),
+    deadline: isDate(x.deadline) ? x.deadline : '', notes: s(x.notes),
+    createdAt: Number(x.createdAt) || now, updatedAt: Number(x.updatedAt) || Number(x.createdAt) || now,
+    closedAt: Number(x.closedAt) || null,
+    history: Array.isArray(x.history) ? x.history.filter(h => h && h.note).map(h => ({ date: s(h.date), note: s(h.note), kind: s(h.kind) || 'note' })) : []
+  };
+  return it;
+}
+function loadDb() {
+  const base = defaultDb();
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return base;
+    const d = JSON.parse(raw);
+    return { ...base, ...d, settings: { ...base.settings, ...(d.settings || {}) }, items: (d.items || []).map(normalize) };
+  } catch (e) {
+    storageError = 'Could not read saved data (' + e.message + '). Changes may not persist.';
+    return base;
+  }
+}
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); storageError = ''; }
+  catch (e) { storageError = 'Saving failed (' + e.message + '). Export your data now.'; }
+}
+let db = loadDb();
+
+/* =====================================================================
+   4. ITEM LOGIC: status, flags, validation, changes with history
+   ===================================================================== */
+const getItem = id => db.items.find(i => i.id === id);
+const isActive = it => it.status === 'open' || it.status === 'waiting';
+const isOverdue = it => isActive(it) && it.nextDate < todayStr();
+const isDueToday = it => isActive(it) && it.nextDate === todayStr();
+const byDate = (a, b) => a.nextDate.localeCompare(b.nextDate) || a.title.localeCompare(b.title);
+const active = () => db.items.filter(isActive);
+
+/** Last time the next action or next date moved (or creation). Drives the PROJECT stale flag. */
+function lastActivity(it) {
+  let t = it.createdAt;
+  for (const h of it.history) if (['created', 'date', 'action'].includes(h.kind)) t = Math.max(t, Date.parse(h.date) || 0);
+  return t;
+}
+/** Does a VENDOR ask contain some kind of date or day reference? */
+const askHasDate = s => /\d|\b(mon|tue|wed|thu|fri|sat|sun)|today|tomorrow|tonight|eod|eow|next week|by\b/i.test(s);
+
+/** Warning badges per tag rules. Returns [{cls, text}]. */
+function flags(it) {
+  const f = [];
+  if (!isActive(it)) return f;
+  if (isOverdue(it)) f.push({ cls: 'red', text: 'Overdue' });
+  else if (isDueToday(it)) f.push({ cls: 'amber', text: 'Due today' });
+  if (it.status === 'waiting') f.push({ cls: 'grey', text: 'Waiting' });
+  if (it.tag === 'PROJECT') {
+    if (it.deadline) {
+      const d = daysBetween(todayStr(), it.deadline);
+      if (d < 0) f.push({ cls: 'red', text: 'Deadline passed' });
+      else if (d <= 7) f.push({ cls: 'amber', text: 'Deadline in ' + plural(d, 'day') });
+    }
+    if (Date.now() - lastActivity(it) > 7 * DAY_MS) f.push({ cls: 'amber', text: 'No activity 7+ days' });
+  }
+  if (it.tag === 'PERSON' && it.status === 'open' && it.updatedAt === it.createdAt && Date.now() - it.createdAt > DAY_MS)
+    f.push({ cls: 'red', text: 'Reply owed' });
+  if (it.tag === 'VENDOR' && !askHasDate(it.nextAction)) f.push({ cls: 'grey', text: 'Ask has no date' });
+  return f;
+}
+
+/** Returns a list of error messages; empty when valid. Tag rules apply to open/waiting items. */
+function validate(it) {
+  const e = [];
+  if (!it.title.trim()) e.push('Title is required.');
+  if (!it.nextAction.trim()) e.push('Next action is required.');
+  if (!isDate(it.nextDate)) e.push('Next date is required.');
+  if (isActive(it)) {
+    if (it.tag === 'PROJECT' && (!it.milestone.trim() || !isDate(it.deadline))) e.push('PROJECT items need a milestone and a deadline.');
+    if (it.tag === 'PERSON' && !it.counterpart.trim()) e.push('PERSON items need a counterpart.');
+    if (it.tag === 'APPROVAL' && it.status === 'waiting' && !it.waitingOn.trim()) e.push('APPROVAL items need "Waiting on" when status is waiting.');
+  }
+  return e;
+}
+
+function addHistory(it, note, kind) { it.history.push({ date: new Date().toISOString(), note, kind }); }
+
+/**
+ * Apply field changes to an item. Validates first; writes a history entry for any
+ * change to nextAction, nextDate or status. `reason` is appended to those entries
+ * (or logged on its own if nothing tracked changed). Returns error list or [].
+ */
+function applyChange(it, changes, reason = '') {
+  const next = { ...it, ...changes, history: [...it.history] };
+  const errs = validate(next);
+  if (errs.length) return errs;
+  const r = reason ? ' - ' + reason : '';
+  let logged = false;
+  if (next.nextAction !== it.nextAction) { addHistory(next, 'Next action: "' + it.nextAction + '" -> "' + next.nextAction + '"' + r, 'action'); logged = true; }
+  if (next.nextDate !== it.nextDate) { addHistory(next, 'Next date: ' + it.nextDate + ' -> ' + next.nextDate + r, 'date'); logged = true; }
+  if (next.status !== it.status) {
+    const w = next.status === 'waiting' && next.waitingOn ? ' (on ' + next.waitingOn + ')' : '';
+    addHistory(next, 'Status: ' + it.status + ' -> ' + next.status + w + r, 'status'); logged = true;
+    next.closedAt = isActive(next) ? null : Date.now();
+  }
+  if (!logged && reason) addHistory(next, reason, 'note');
+  next.updatedAt = Date.now();
+  Object.assign(it, next);
+  save();
+  return [];
+}
+
+function createItem(fields) {
+  const now = Date.now();
+  const it = normalize({ ...fields, id: uid(), createdAt: now, updatedAt: now, closedAt: null, history: [] });
+  const errs = validate(it);
+  if (errs.length) return errs;
+  addHistory(it, 'Created. Next: ' + it.nextAction + ' (' + it.nextDate + ')', 'created');
+  db.items.push(it);
+  save();
+  return [];
+}
+
+/* =====================================================================
+   5. MODAL DIALOG + TOAST
+   modal() returns a Promise resolving to field values, or null on cancel.
+   ===================================================================== */
+function fieldHtml(f) {
+  const id = 'f-' + f.name, v = f.value ?? '';
+  let input;
+  if (f.type === 'select') input = '<select id="' + id + '" name="' + f.name + '">' + f.options.map(o => {
+    const [val, lab] = Array.isArray(o) ? o : [o, o];
+    return '<option value="' + esc(val) + '"' + (String(val) === String(v) ? ' selected' : '') + '>' + esc(lab) + '</option>';
+  }).join('') + '</select>';
+  else if (f.type === 'textarea') input = '<textarea id="' + id + '" name="' + f.name + '" rows="3">' + esc(v) + '</textarea>';
+  else input = '<input id="' + id + '" name="' + f.name + '" type="' + (f.type || 'text') + '" value="' + esc(v) + '"' + (f.min ? ' min="' + f.min + '"' : '') + ' autocomplete="off">';
+  return '<div class="' + (f.half ? 'half' : '') + '"><label for="' + id + '">' + esc(f.label) + (f.required ? ' *' : '') + '</label>' + input +
+    (f.hint ? '<p class="hint" id="' + id + '-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
+}
+function modal({ title, intro = '', fields = [], ok = 'Save', danger = false, extra = '', check, grid = false }) {
+  return new Promise(resolve => {
+    const wrap = $('#modal');
+    wrap.innerHTML = '<form class="dlg" novalidate><h2>' + esc(title) + '</h2>' + (intro ? '<p>' + intro + '</p>' : '') +
+      '<div class="' + (grid ? 'grid2' : '') + '">' + fields.map(fieldHtml).join('') + '</div>' + extra +
+      '<p class="err" id="dlg-err"></p><div class="btns"><button type="button" data-x>Cancel</button>' +
+      '<button type="submit" class="' + (danger ? 'danger' : 'primary') + '">' + esc(ok) + '</button></div></form>';
+    wrap.hidden = false;
+    const form = wrap.querySelector('form');
+    const fail = m => { $('#dlg-err').textContent = m; };
+    const onKey = e => { if (e.key === 'Escape') close(null); };
+    const close = v => { wrap.hidden = true; wrap.innerHTML = ''; document.removeEventListener('keydown', onKey); resolve(v); };
+    document.addEventListener('keydown', onKey);
+    wrap.querySelector('[data-x]').onclick = () => close(null);
+    form.onsubmit = e => {
+      e.preventDefault();
+      const vals = {};
+      for (const f of fields) vals[f.name] = form.elements[f.name].value;
+      for (const f of fields) {
+        if (f.required && !vals[f.name].trim()) return fail(f.label + ' is required.');
+        if (f.type === 'date' && f.min && vals[f.name] && vals[f.name] < f.min) return fail(f.label + ' must be on or after ' + fmtDate(f.min) + '.');
+      }
+      const msg = check ? check(vals) : null;
+      if (msg) return fail(msg);
+      close(vals);
+    };
+    const first = form.querySelector('input,textarea,select');
+    if (first) first.focus();
+  });
+}
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3500);
+}
+function report(errs, okMsg) { if (errs.length) { toast(errs.join(' ')); return false; } if (okMsg) toast(okMsg); return true; }
+
+/* =====================================================================
+   6. ITEM ACTIONS (done, push, waiting, resume, drop, edit, reopen)
+   Each returns true if a change was saved.
+   ===================================================================== */
+async function actDone(it) {
+  const v = await modal({ title: 'Mark done', intro: esc(it.title), ok: 'Mark done',
+    fields: [{ name: 'note', label: 'Closing note (optional)', type: 'textarea' }] });
+  return !!v && report(applyChange(it, { status: 'done' }, v.note.trim()), 'Closed.');
+}
+async function actPush(it) {
+  const min = todayStr();
+  const v = await modal({ title: 'Push date', ok: 'Push',
+    intro: esc(it.title) + '<br><small>Current: ' + esc(fmtDate(it.nextDate)) + ' (' + relDay(it.nextDate) + ')</small>',
+    fields: [{ name: 'date', label: 'New next date', type: 'date', value: addDays(it.nextDate > min ? it.nextDate : min, 1), min, required: true },
+      { name: 'reason', label: 'Reason', type: 'textarea', required: true }],
+    check: v => (v.date === it.nextDate ? 'Pick a different date.' : null) });
+  return !!v && report(applyChange(it, { nextDate: v.date }, 'Pushed: ' + v.reason.trim()), 'Pushed to ' + fmtDate(v.date) + '.');
+}
+async function actWaiting(it) {
+  const t = todayStr();
+  const v = await modal({ title: 'Mark waiting', intro: esc(it.title), ok: 'Mark waiting',
+    fields: [{ name: 'waitingOn', label: 'Waiting on (who has the ball)', value: it.waitingOn || it.counterpart, required: true },
+      { name: 'date', label: 'Follow up on', type: 'date', value: it.nextDate > t ? it.nextDate : addWorkingDays(t, 2), min: t, required: true }] });
+  return !!v && report(applyChange(it, { status: 'waiting', waitingOn: v.waitingOn.trim(), nextDate: v.date }), 'Marked waiting.');
+}
+function actResume(it) { return report(applyChange(it, { status: 'open' }, 'Ball back with me'), 'Back to open.'); }
+async function actDrop(it) {
+  const v = await modal({ title: 'Drop item', intro: esc(it.title), ok: 'Drop', danger: true,
+    fields: [{ name: 'reason', label: 'Reason for dropping', type: 'textarea', required: true }] });
+  return !!v && report(applyChange(it, { status: 'dropped' }, 'Dropped: ' + v.reason.trim()), 'Dropped.');
+}
+async function actReopen(it) {
+  const errs = applyChange(it, { status: 'open', closedAt: null }, 'Reopened');
+  if (!errs.length) { toast('Reopened.'); return true; }
+  return openEdit(it, { status: 'open' }); // missing required fields: let the user fill them
+}
+/** Edit next action only (used in weekly review). New date must not be in the past. */
+async function actEditNext(it) {
+  const t = todayStr();
+  const v = await modal({ title: 'Edit next action', intro: esc(it.title), ok: 'Save',
+    fields: [{ name: 'nextAction', label: 'Next action', value: it.nextAction, required: true, hint: TAG_HINTS[it.tag] },
+      { name: 'nextDate', label: 'Next date', type: 'date', value: it.nextDate < t ? t : it.nextDate, min: t, required: true },
+      { name: 'reason', label: 'Reason (optional, logged)' }] });
+  return !!v && report(applyChange(it, { nextAction: v.nextAction.trim(), nextDate: v.nextDate }, v.reason.trim()), 'Updated.');
+}
+/** Full edit form. `preset` overrides initial values (e.g. reopen sets status open). */
+async function openEdit(it, preset = {}) {
+  const cur = { ...it, ...preset };
+  const histHtml = it.history.length ? '<details class="hist"><summary>History (' + it.history.length + ')</summary>' + historyList(it) + '</details>' : '';
+  const p = modal({ title: 'Edit item', ok: 'Save', grid: true, extra: histHtml,
+    fields: [
+      { name: 'title', label: 'Title', value: cur.title, required: true },
+      { name: 'tag', label: 'Tag', type: 'select', options: TAGS, value: cur.tag },
+      { name: 'nextAction', label: 'Next action', value: cur.nextAction, required: true },
+      { name: 'nextDate', label: 'Next date', type: 'date', value: cur.nextDate, required: true },
+      { name: 'status', label: 'Status', type: 'select', options: STATUSES, value: cur.status },
+      { name: 'counterpart', label: 'Counterpart', value: cur.counterpart },
+      { name: 'waitingOn', label: 'Waiting on', value: cur.waitingOn },
+      { name: 'milestone', label: 'Milestone', value: cur.milestone },
+      { name: 'deadline', label: 'Deadline', type: 'date', value: cur.deadline },
+      { name: 'reason', label: 'Reason for change (optional, logged)' },
+      { name: 'notes', label: 'Notes', type: 'textarea', value: cur.notes, hint: TAG_HINTS[cur.tag] }],
+    check: v => validate(normalize({ ...it, ...v })).join(' ') || null });
+  const tagSel = $('#f-tag');
+  tagSel.onchange = () => { $('#f-notes-hint').textContent = TAG_HINTS[tagSel.value]; };
+  const v = await p;
+  if (!v) return false;
+  const { reason, ...fields } = v;
+  for (const k of Object.keys(fields)) if (typeof fields[k] === 'string' && k !== 'notes') fields[k] = fields[k].trim();
+  return report(applyChange(it, fields, reason.trim()), 'Saved.');
+}
+const ACTIONS = { done: actDone, push: actPush, wait: actWaiting, resume: actResume, drop: actDrop, edit: it => openEdit(it), reopen: actReopen };
+
+/* =====================================================================
+   7. RENDERING: shared pieces
+   ===================================================================== */
+function historyList(it) {
+  return '<ol>' + it.history.slice().reverse().map(h => '<li><small>' + esc(fmtTs(Date.parse(h.date))) + '</small> ' + esc(h.note) + '</li>').join('') + '</ol>';
+}
+function flagHtml(it) { return flags(it).map(f => '<span class="flag ' + f.cls + '">' + esc(f.text) + '</span>').join(''); }
+function metaHtml(it) {
+  const m = [];
+  if (isActive(it)) m.push('<span class="' + (isOverdue(it) ? 'late' : '') + '">' + esc(fmtDate(it.nextDate)) + ' - ' + relDay(it.nextDate) + '</span>');
+  if (it.counterpart) m.push('<span>With: ' + esc(it.counterpart) + '</span>');
+  if (it.status === 'waiting') m.push('<span>Waiting on: ' + esc(it.waitingOn || 'not set') + ' (' + plural(daysSince(it.updatedAt), 'day') + ' since update)</span>');
+  if (it.milestone) m.push('<span>Milestone: ' + esc(it.milestone) + '</span>');
+  if (it.deadline) m.push('<span>Deadline: ' + esc(fmtDate(it.deadline)) + '</span>');
+  if (it.closedAt) m.push('<span>' + (it.status === 'done' ? 'Closed' : 'Dropped') + ': ' + esc(fmtTs(it.closedAt)) + '</span>');
+  return '<div class="meta">' + m.join('') + '</div>';
+}
+function buttonsFor(it) {
+  const b = (act, label) => '<button data-act="' + act + '" data-id="' + it.id + '">' + label + '</button>';
+  if (!isActive(it)) return b('reopen', 'Reopen');
+  return b('done', 'Done') + b('push', 'Push') + (it.status === 'waiting' ? b('resume', 'Resume') : b('wait', 'Waiting')) + b('drop', 'Drop') + b('edit', 'Edit');
+}
+function card(it, { buttons = true } = {}) {
+  const cls = isOverdue(it) ? 'overdue' : isDueToday(it) ? 'today' : '';
+  return '<article class="card ' + cls + '"><div class="top"><span class="tag">' + it.tag + '</span><span class="title">' + esc(it.title) + '</span>' + flagHtml(it) + '</div>' +
+    '<div class="na">' + (isActive(it) ? 'Next: ' : 'Last next action: ') + esc(it.nextAction) + '</div>' + metaHtml(it) +
+    (it.notes ? '<div class="meta">Notes: ' + esc(it.notes) + '</div>' : '') +
+    (buttons ? '<div class="btns">' + buttonsFor(it) + '</div>' : '') +
+    (it.history.length ? '<details class="hist"><summary>History (' + it.history.length + ')</summary>' + historyList(it) + '</details>' : '') + '</article>';
+}
+const empty = msg => '<p class="empty">' + msg + '</p>';
+
+/* =====================================================================
+   8. VIEWS
+   ===================================================================== */
+const VIEW_RENDER = {
+  today() {
+    const due = active().filter(i => i.nextDate <= todayStr()).sort(byDate);
+    if (!due.length) return '<h2>Today</h2>' + empty('Nothing overdue or due today.');
+    const over = due.filter(isOverdue), now = due.filter(isDueToday);
+    return '<h2>Today</h2>' + (over.length ? '<h3>Overdue (' + over.length + ')</h3>' + over.map(i => card(i)).join('') : '') +
+      (now.length ? '<h3>Due today (' + now.length + ')</h3>' + now.map(i => card(i)).join('') : '');
+  },
+  open() {
+    const items = active();
+    if (!items.length) return '<h2>All open</h2>' + empty('No open loops. Add one above.');
+    const groups = TAGS.map(t => [t, items.filter(i => i.tag === t).sort(byDate)]).filter(g => g[1].length);
+    return '<h2>All open (' + items.length + ')</h2><div class="counts">' + groups.map(([t, l]) => '<span>' + t + ': ' + l.length + '</span>').join('') + '</div>' +
+      groups.map(([t, l]) => '<h3>' + t + ' (' + l.length + ')</h3>' + l.map(i => card(i)).join('')).join('');
+  },
+  waiting() {
+    const items = db.items.filter(i => i.status === 'waiting').sort((a, b) => a.updatedAt - b.updatedAt);
+    return '<h2>Waiting (' + items.length + ')</h2><p class="hint">Oldest update first. The ball is with someone else; follow up on the next date.</p>' +
+      (items.length ? items.map(i => card(i)).join('') : empty('Nothing waiting on others.'));
+  },
+  admin() {
+    const items = active().filter(i => i.tag === 'ADMIN').sort(byDate);
+    if (!items.length) return '<h2>Admin batch</h2>' + empty('No open ADMIN items.');
+    return '<h2>Admin batch (' + items.length + ')</h2><p class="hint">Handle these in one sitting. Tick what you finished, then mark them done together.</p>' +
+      '<div class="toolbar"><label class="inline"><input type="checkbox" id="adm-all"> Select all</label><button class="primary" data-act="admin-done">Mark selected done</button></div>' +
+      '<ul class="rows">' + items.map(i => '<li class="row ' + (isOverdue(i) ? 'overdue' : '') + '"><label><input type="checkbox" class="adm" value="' + i.id + '"><span><strong>' + esc(i.title) + '</strong><br><small>' +
+        esc(i.nextAction) + ' - ' + esc(fmtDate(i.nextDate)) + ' (' + relDay(i.nextDate) + ')</small></span></label><button data-act="edit" data-id="' + i.id + '">Edit</button></li>').join('') + '</ul>';
+  },
+  review: renderReview,
+  done() {
+    return '<h2>Done log</h2><input id="done-q" type="search" placeholder="Search title, counterpart, notes, history" value="' + esc(doneQuery) + '"><div id="done-list">' + doneList() + '</div>';
+  },
+  data: renderSettings
+};
+let doneQuery = '';
+function doneList() {
+  const q = doneQuery.trim().toLowerCase();
+  const items = db.items.filter(i => !isActive(i)).sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0))
+    .filter(i => !q || [i.title, i.tag, i.counterpart, i.nextAction, i.notes, i.milestone, i.waitingOn, ...i.history.map(h => h.note)].join(' ').toLowerCase().includes(q));
+  return '<p class="hint">' + plural(items.length, 'closed item') + (q ? ' matching' : '') + '</p>' +
+    (items.length ? items.map(i => card(i)).join('') : empty(q ? 'No matches.' : 'Nothing closed yet.'));
+}
+
+/* ---------- 8a. Weekly review ---------- */
+let reviewResult = null; // summary shown right after completing a review
+function reviewCounts(r) {
+  const d = Object.values(r.decisions);
+  const c = k => d.filter(x => x === k).length;
+  return { closed: c('done'), pushed: c('pushed'), dropped: c('dropped'), edited: c('edited'),
+    skipped: r.queue.filter(id => !r.decisions[id] || r.decisions[id] === 'skipped').length, remaining: active().length };
+}
+function summaryHtml(s) {
+  return '<div class="summary"><div><b>' + s.closed + '</b>Closed</div><div><b>' + s.pushed + '</b>Pushed</div><div><b>' + s.dropped + '</b>Dropped</div>' +
+    '<div><b>' + s.edited + '</b>Edited</div><div><b>' + s.skipped + '</b>No decision</div><div><b>' + s.remaining + '</b>Remaining open</div></div>';
+}
+function renderReview() {
+  const s = db.settings;
+  if (reviewResult) return '<h2>Review complete</h2>' + summaryHtml(reviewResult) + '<div class="btns"><button data-act="review-close">Close</button></div>';
+  const last = s.lastReviewAt ? fmtTs(s.lastReviewAt) + ' (' + plural(daysSince(s.lastReviewAt), 'day') + ' ago)' : 'never';
+  if (!db.review) {
+    const n = active().length, o = active().filter(isOverdue).length;
+    return '<h2>Weekly review</h2><div class="panel"><p>Last completed review: <strong>' + esc(last) + '</strong></p>' +
+      '<p>' + plural(n, 'open item') + ' to review' + (o ? ', <strong>' + o + ' overdue</strong>' : '') + '. You will see each one and pick: Done, Push, Drop, or Edit next action.</p>' +
+      '<p class="hint">The review cannot be completed while any item is overdue without a decision.</p>' +
+      '<div class="btns"><button class="primary" data-act="review-start"' + (n ? '' : ' disabled') + '>Start review</button></div></div>' +
+      (s.lastReviewSummary ? '<h3>Last review summary</h3>' + summaryHtml(s.lastReviewSummary) : '');
+  }
+  const r = db.review;
+  r.queue = r.queue.filter(getItem); // drop ids that vanished (e.g. replace-import)
+  const total = r.queue.length;
+  const pct = total ? Math.round(Math.min(r.idx, total) / total * 100) : 100;
+  const head = '<h2>Weekly review</h2><div class="progress"><div style="width:' + pct + '%"></div></div>';
+  if (r.idx >= total) {
+    const blockers = db.items.filter(isOverdue).sort(byDate);
+    return head + '<div class="panel"><p><strong>End of list.</strong></p>' + summaryHtml(reviewCounts(r)) +
+      (blockers.length ? '<p class="err">' + plural(blockers.length, 'item') + ' still overdue. Decide on each before completing:</p><ul class="rows">' +
+        blockers.map(b => '<li class="row overdue"><span style="flex:1">' + esc(b.title) + ' <small>(' + relDay(b.nextDate) + ')</small></span><button data-act="review-goto" data-id="' + b.id + '">Decide</button></li>').join('') + '</ul>'
+        : '<p>No overdue items. Ready to complete.</p>') +
+      '<div class="btns"><button data-act="review-back">Back</button><button data-act="review-cancel">Cancel review</button>' +
+      '<button class="primary" data-act="review-complete"' + (blockers.length ? ' disabled' : '') + '>Complete review</button></div></div>';
+  }
+  const it = getItem(r.queue[r.idx]);
+  const dec = r.decisions[it.id];
+  const b = (act, label, cls = '') => '<button class="' + cls + '" data-act="' + act + '" data-id="' + it.id + '">' + label + '</button>';
+  return head + '<p class="hint">Item ' + (r.idx + 1) + ' of ' + total + (dec ? ' - decision so far: ' + dec : '') + '</p>' + card(it, { buttons: false }) +
+    (isActive(it) ? '<div class="btns">' + b('rv-done', 'Done', 'primary') + b('rv-push', 'Push') + b('rv-drop', 'Drop') + b('rv-edit', 'Edit next action') + '</div>' : '<p>This item is closed.</p>') +
+    '<div class="btns"><button data-act="review-back"' + (r.idx ? '' : ' disabled') + '>Back</button><button data-act="review-skip">' +
+    (isOverdue(it) ? 'Skip for now (must decide before finishing)' : dec && dec !== 'skipped' ? 'Next' : 'Skip') + '</button>' +
+    '<button data-act="review-end">Go to end</button></div>';
+}
+async function reviewDecide(kind, it) {
+  const fn = { 'rv-done': actDone, 'rv-push': actPush, 'rv-drop': actDrop, 'rv-edit': actEditNext }[kind];
+  const label = { 'rv-done': 'done', 'rv-push': 'pushed', 'rv-drop': 'dropped', 'rv-edit': 'edited' }[kind];
+  if (await fn(it)) { db.review.decisions[it.id] = label; db.review.idx++; save(); }
+}
+function completeReview() {
+  if (db.items.some(isOverdue)) return toast('Decide on every overdue item first.');
+  reviewResult = { ...reviewCounts(db.review), at: Date.now() };
+  db.settings.lastReviewAt = Date.now();
+  db.settings.lastReviewSummary = reviewResult;
+  db.review = null;
+  save();
+}
+
+/* ---------- 8b. Settings, reminders, backup ---------- */
+function renderSettings() {
+  const s = db.settings;
+  const N = 'Notification' in window;
+  const perm = N ? Notification.permission : 'unsupported';
+  const exp = s.lastExportAt ? fmtTs(s.lastExportAt) + ' (' + plural(daysSince(s.lastExportAt), 'day') + ' ago)' : 'never';
+  return '<h2>Settings</h2>' +
+    '<div class="panel"><strong>Reminders</strong>' +
+    '<p class="hint">One notification per day at the set time, summarising overdue and due-today counts. Only fires while this page is open in a tab.</p>' +
+    '<div class="inline">' + (perm === 'unsupported' ? '<span class="muted">Notifications are not supported here.</span>'
+      : perm === 'denied' ? '<span class="muted">Notifications are blocked in browser settings.</span>'
+      : perm === 'granted' ? '<label><input type="checkbox" data-set="notifyOn"' + (s.notifyOn ? ' checked' : '') + '> Daily notification on</label><button data-act="notify-test">Send test</button>'
+      : '<button data-act="notify-ask">Enable notifications</button>') +
+    '<label>Time <input type="time" data-set="notifyTime" value="' + esc(s.notifyTime) + '"></label></div>' +
+    '<label>Weekly review day</label><select data-set="reviewDay" style="max-width:220px">' + DAY_NAMES.map((d, i) => '<option value="' + i + '"' + (i === Number(s.reviewDay) ? ' selected' : '') + '>' + d + '</option>').join('') + '</select></div>' +
+    '<div class="panel"><strong>Backup</strong><p>Last export: <strong>' + esc(exp) + '</strong></p>' +
+    '<div class="btns"><button class="primary" data-act="export">Export JSON</button></div>' +
+    '<label for="imp-file">Import JSON</label><input id="imp-file" type="file" accept=".json,application/json">' +
+    '<div class="inline" style="margin-top:8px"><label><input type="radio" name="imp-mode" value="merge" checked> Merge</label><label><input type="radio" name="imp-mode" value="replace"> Replace</label>' +
+    '<button data-act="import">Import</button></div><p class="hint">Merge keeps the newest copy of each item (by id). Replace discards current items.</p></div>' +
+    '<div class="panel"><strong>Data</strong><p class="hint">' + plural(db.items.length, 'item') + ' stored in this browser.</p>' +
+    '<div class="btns"><button data-act="sample">Load sample data</button><button class="danger" data-act="clear">Clear all data</button></div></div>';
+}
+
+function exportData() {
+  const payload = { app: 'open-loops', version: 1, exportedAt: new Date().toISOString(), items: db.items, settings: db.settings };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'open-loops-' + todayStr() + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  db.settings.lastExportAt = Date.now();
+  save();
+  toast('Exported ' + plural(db.items.length, 'item') + '.');
+}
+async function importData() {
+  const file = $('#imp-file').files[0];
+  if (!file) return toast('Choose a JSON file first.');
+  const mode = (document.querySelector('[name=imp-mode]:checked') || {}).value || 'merge';
+  let data;
+  try { data = JSON.parse(await file.text()); } catch (e) { return toast('Not valid JSON: ' + e.message); }
+  const raw = Array.isArray(data) ? data : data && Array.isArray(data.items) ? data.items : null;
+  if (!raw) return toast('No items found in that file.');
+  const incoming = raw.filter(x => x && typeof x === 'object').map(normalize);
+  if (mode === 'replace') {
+    const ok = await modal({ title: 'Replace all items?', intro: 'This removes your ' + plural(db.items.length, 'current item') + ' and loads ' + plural(incoming.length, 'item') + ' from the file.', ok: 'Replace', danger: true });
+    if (!ok) return;
+    db.items = incoming; db.review = null;
+    toast('Replaced with ' + plural(incoming.length, 'item') + '.');
+  } else {
+    let added = 0, updated = 0, same = 0;
+    for (const it of incoming) {
+      const cur = getItem(it.id);
+      if (!cur) { db.items.push(it); added++; }
+      else if (it.updatedAt > cur.updatedAt) { Object.assign(cur, it); updated++; }
+      else same++;
+    }
+    toast('Merged: ' + added + ' added, ' + updated + ' updated, ' + same + ' unchanged.');
+  }
+  const st = data && data.settings;
+  if (st && Number(st.lastReviewAt) > (db.settings.lastReviewAt || 0)) db.settings.lastReviewAt = Number(st.lastReviewAt);
+  save();
+  render();
+}
+async function clearAll() {
+  const v = await modal({ title: 'Clear all data', danger: true, ok: 'Delete everything',
+    intro: 'This permanently deletes all items and settings in this browser. Export first if unsure.',
+    fields: [{ name: 'confirm', label: 'Type DELETE to confirm', required: true }],
+    check: v => (v.confirm !== 'DELETE' ? 'Type DELETE exactly (capitals).' : null) });
+  if (!v) return;
+  db = defaultDb(); reviewResult = null; save(); toast('All data cleared.');
+}
+/** Five examples, one per rule-bearing tag, with dates chosen to trigger each rule. */
+function loadSample() {
+  const t = todayStr(), now = Date.now(), ago = d => now - d * DAY_MS;
+  const mk = (o, createdDaysAgo) => {
+    const c = ago(createdDaysAgo);
+    const it = normalize({ ...o, id: uid(), createdAt: c, updatedAt: c });
+    it.history.push({ date: new Date(c).toISOString(), note: 'Created. Next: ' + it.nextAction + ' (' + it.nextDate + ')', kind: 'created' });
+    return it;
+  };
+  const items = [
+    mk({ title: 'Revised freight rate from Apex Logistics', tag: 'VENDOR', counterpart: 'Ravi, Apex Logistics', nextAction: 'Ask Ravi for revised rate by Thursday 14:00', nextDate: addDays(t, -1), notes: 'Current quote is 8% above budget.' }, 4),
+    mk({ title: 'Q1 tooling budget sign-off', tag: 'APPROVAL', counterpart: 'Meera, Finance', status: 'waiting', waitingOn: 'Meera (CFO review)', nextAction: 'Check whether CFO review is done', nextDate: addWorkingDays(t, 2), notes: 'Stage 2 of 3: submitted to Finance, pending CFO. Then procurement.' }, 3),
+    mk({ title: 'Renew vehicle insurance', tag: 'ADMIN', nextAction: 'Compare the two quotes and pay online', nextDate: t }, 2),
+    mk({ title: 'Warehouse layout redesign', tag: 'PROJECT', counterpart: 'Ops team', milestone: 'Layout draft v1 shared with ops', deadline: addDays(t, 5), nextAction: 'Finish inbound zone sketch', nextDate: addDays(t, 1) }, 10),
+    mk({ title: 'Reply to Anita about mentoring call', tag: 'PERSON', counterpart: 'Anita', nextAction: 'Send two time slots for next week', nextDate: t }, 3)
+  ];
+  items[1].history.push({ date: new Date(ago(2)).toISOString(), note: 'Status: open -> waiting (on Meera (CFO review))', kind: 'status' });
+  items[1].updatedAt = ago(2);
+  db.items.push(...items);
+  save();
+  toast('Loaded 5 sample items.');
+}
+
+/* =====================================================================
+   9. BANNERS, NAV, MAIN RENDER
+   ===================================================================== */
+let view = 'today';
+let loadBannerHidden = false;
+function renderBanners() {
+  const s = db.settings, t = todayStr(), out = [];
+  const ban = (cls, text, btns) => '<div class="banner ' + cls + '"><span>' + text + '</span>' + btns + '</div>';
+  if (storageError) out.push(ban('bad', esc(storageError), ''));
+  const o = db.items.filter(isOverdue).length, d = db.items.filter(isDueToday).length;
+  if (!loadBannerHidden && (o || d))
+    out.push(ban(o ? 'bad' : 'warn', '<strong>' + o + ' overdue</strong>, ' + d + ' due today.', '<button data-act="goto-today">Show</button><button data-act="hide-load">Dismiss</button>'));
+  if (new Date().getDay() === Number(s.reviewDay) && (!s.lastReviewAt || Date.now() - s.lastReviewAt > 6 * DAY_MS) && s.reviewBannerDismissed !== t)
+    out.push(ban('warn', 'Weekly review due. Last review: ' + (s.lastReviewAt ? plural(daysSince(s.lastReviewAt), 'day') + ' ago' : 'never') + '.',
+      '<button data-act="goto-review">Start</button><button data-act="hide-review">Later</button>'));
+  if (db.items.length && (!s.lastExportAt || Date.now() - s.lastExportAt > 14 * DAY_MS) && s.exportNagDismissed !== t)
+    out.push(ban('', 'Last export: ' + (s.lastExportAt ? plural(daysSince(s.lastExportAt), 'day') + ' ago' : 'never') + '. Data lives only in this browser.',
+      '<button data-act="export">Export now</button><button data-act="hide-export">Later</button>'));
+  $('#banners').innerHTML = out.join('');
+}
+function renderNav() {
+  const a = active();
+  const cnt = {
+    today: a.filter(i => i.nextDate <= todayStr()).length, open: a.length,
+    waiting: a.filter(i => i.status === 'waiting').length, admin: a.filter(i => i.tag === 'ADMIN').length
+  };
+  const over = a.some(isOverdue);
+  $('#nav').innerHTML = VIEWS.map(([k, label]) => '<button data-view="' + k + '" class="' + (k === view ? 'on' : '') + '">' + label +
+    (cnt[k] ? '<span class="n ' + (k === 'today' && over ? 'bad' : '') + '">' + cnt[k] + '</span>' : '') +
+    (k === 'review' && db.review ? '<span class="n">in progress</span>' : '') + '</button>').join('');
+}
+function render() {
+  renderNav();
+  renderBanners();
+  $('#view').innerHTML = VIEW_RENDER[view]();
+}
+function setView(v) { view = v; render(); window.scrollTo(0, 0); }
+
+/* =====================================================================
+   10. QUICK ADD
+   ===================================================================== */
+const qa = $('#qa');
+let qaDateTouched = false;
+qa.tag.innerHTML = TAGS.map(t => '<option>' + t + '</option>').join('');
+function defaultDateFor(tag) { return tag === 'VENDOR' ? addWorkingDays(todayStr(), 2) : todayStr(); }
+function qaTagChanged() {
+  $('#qa-hint').textContent = TAG_HINTS[qa.tag.value];
+  if (!qaDateTouched) qa.nextDate.value = defaultDateFor(qa.tag.value);
+  if (qa.tag.value === 'PROJECT' || qa.tag.value === 'PERSON') $('#qa-more').open = true;
+}
+qa.tag.addEventListener('change', qaTagChanged);
+qa.nextDate.addEventListener('input', () => { qaDateTouched = true; });
+qa.addEventListener('submit', e => {
+  e.preventDefault();
+  const f = {};
+  for (const k of ['title', 'tag', 'nextAction', 'nextDate', 'counterpart', 'status', 'waitingOn', 'milestone', 'deadline', 'notes'])
+    f[k] = k === 'notes' ? qa[k].value : qa[k].value.trim();
+  const errs = createItem(f);
+  if (errs.length) {
+    $('#qa-err').textContent = errs.join(' ');
+    if (errs.some(x => /PROJECT|PERSON|APPROVAL/.test(x))) $('#qa-more').open = true;
+    return;
+  }
+  $('#qa-err').textContent = '';
+  const tag = qa.tag.value;
+  qa.reset(); qa.tag.value = tag; qaDateTouched = false; qaTagChanged(); $('#qa-more').open = false;
+  toast('Added.');
+  render();
+  qa.title.focus();
+});
+
+/* =====================================================================
+   11. EVENT WIRING (delegated clicks, settings changes, keyboard)
+   ===================================================================== */
+document.addEventListener('click', async e => {
+  const nav = e.target.closest('[data-view]');
+  if (nav) return setView(nav.dataset.view);
+  const btn = e.target.closest('[data-act]');
+  if (!btn || btn.disabled) return;
+  const act = btn.dataset.act, it = btn.dataset.id ? getItem(btn.dataset.id) : null;
+  const s = db.settings, r = db.review;
+  if (ACTIONS[act] && it) await ACTIONS[act](it);
+  else if (act.startsWith('rv-') && it) await reviewDecide(act, it);
+  else switch (act) {
+    case 'goto-today': view = 'today'; break;
+    case 'goto-review': view = 'review'; break;
+    case 'hide-load': loadBannerHidden = true; break;
+    case 'hide-review': s.reviewBannerDismissed = todayStr(); save(); break;
+    case 'hide-export': s.exportNagDismissed = todayStr(); save(); break;
+    case 'export': exportData(); break;
+    case 'import': await importData(); break;
+    case 'sample': loadSample(); break;
+    case 'clear': await clearAll(); break;
+    case 'notify-ask': await Notification.requestPermission(); if (Notification.permission === 'granted') { s.notifyOn = true; save(); } break;
+    case 'notify-test': sendNotification(true); break;
+    case 'admin-done': {
+      const ids = $$('.adm:checked').map(c => c.value);
+      if (!ids.length) { toast('Tick at least one item.'); break; }
+      ids.forEach(id => applyChange(getItem(id), { status: 'done' }, 'Closed in admin batch'));
+      toast('Closed ' + plural(ids.length, 'item') + '.');
+      break;
+    }
+    case 'review-start': {
+      reviewResult = null;
+      const list = active().sort(byDate); // overdue first because they have the earliest dates
+      db.review = { startedAt: Date.now(), queue: list.map(i => i.id), idx: 0, decisions: {} };
+      save(); break;
+    }
+    case 'review-skip': if (!r.decisions[r.queue[r.idx]]) r.decisions[r.queue[r.idx]] = 'skipped'; r.idx++; save(); break;
+    case 'review-back': r.idx = Math.max(0, Math.min(r.idx, r.queue.length) - 1); save(); break;
+    case 'review-end': r.idx = r.queue.length; save(); break;
+    case 'review-goto': {
+      let i = r.queue.indexOf(btn.dataset.id);
+      if (i < 0) { r.queue.push(btn.dataset.id); i = r.queue.length - 1; } // item added after review started
+      r.idx = i; save(); break;
+    }
+    case 'review-cancel': db.review = null; save(); toast('Review cancelled. Decisions already made are kept.'); break;
+    case 'review-complete': completeReview(); break;
+    case 'review-close': reviewResult = null; break;
+    default: return;
+  }
+  render();
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'adm-all') { $$('.adm').forEach(c => { c.checked = e.target.checked; }); return; }
+  const k = e.target.dataset.set;
+  if (!k) return;
+  db.settings[k] = e.target.type === 'checkbox' ? e.target.checked : k === 'reviewDay' ? Number(e.target.value) : e.target.value;
+  if (k === 'notifyTime') db.settings.lastNotified = null; // allow today's notification at the new time
+  save();
+  renderBanners();
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'done-q') { doneQuery = e.target.value; $('#done-list').innerHTML = doneList(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'n' || e.ctrlKey || e.metaKey || e.altKey || !$('#modal').hidden) return;
+  if (e.target.closest('input,textarea,select,[contenteditable]')) return;
+  e.preventDefault();
+  qa.title.focus();
+  qa.scrollIntoView({ block: 'start' });
+});
+
+/* =====================================================================
+   12. DAILY NOTIFICATION (checked every 30s while the page is open)
+   ===================================================================== */
+function sendNotification(test = false) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+  const o = db.items.filter(isOverdue).length, d = db.items.filter(isDueToday).length;
+  try { new Notification('Open Loops', { body: o + ' overdue, ' + d + ' due today.' + (test ? ' (test)' : ''), tag: 'openloops-daily' }); }
+  catch (err) { toast('This browser only allows notifications from a service worker.'); return false; }
+  return true;
+}
+function checkNotify() {
+  const s = db.settings, now = new Date(), t = todayStr();
+  if (!s.notifyOn || s.lastNotified === t) return;
+  if (pad(now.getHours()) + ':' + pad(now.getMinutes()) < (s.notifyTime || '09:00')) return;
+  if (sendNotification()) { s.lastNotified = t; save(); }
+}
+
+/* =====================================================================
+   13. START
+   ===================================================================== */
+qaTagChanged();
+render();
+checkNotify();
+setInterval(checkNotify, 30000);
+// Re-render when the date rolls over or the tab comes back, so overdue logic stays current.
+let lastDay = todayStr();
+setInterval(() => { if (todayStr() !== lastDay) { lastDay = todayStr(); render(); } }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && $('#modal').hidden) render(); });
+</script>
+</body>
+</html>
